@@ -35,6 +35,7 @@
 
 #import "iPWSDatabaseModel.h"
 #import "iPWSMacros.h"
+#import "NSString+CppStringAdditions.h"
 
 //------------------------------------------------------------------------------------
 // Private interface
@@ -74,6 +75,7 @@ static NSDictionary *iPWSDatabaseModelVersionMap =
   @"1.7", [[[NSNumber alloc] initWithInt: PWSfile::V17] retain],
   @"2.0", [[[NSNumber alloc] initWithInt: PWSfile::V20] retain],
   @"3.0", [[[NSNumber alloc] initWithInt: PWSfile::V30] retain],
+  @"4.0", [[[NSNumber alloc] initWithInt: PWSfile::V40] retain],
   @"3.0", [[[NSNumber alloc] initWithInt: PWSfile::VCURRENT] retain],
   @"New file", [[[NSNumber alloc] initWithInt: PWSfile::NEWFILE] retain],
   @"Unknown", [[[NSNumber alloc] initWithInt: PWSfile::UNKNOWN_VERSION] retain],
@@ -94,10 +96,6 @@ static NSDictionary *iPWSDatabaseModelErrorCodesMap =
 
 
 //------------------------------------------------------------------------------------
-// Class variables
-static BOOL sessionKeyInitialized = NO;
-
-//------------------------------------------------------------------------------------
 // Model implementation
 @implementation iPWSDatabaseModel
 
@@ -105,14 +103,11 @@ static BOOL sessionKeyInitialized = NO;
 @synthesize fileName;
 @synthesize friendlyName;
 
+
 //------------------------------------------------------------------------------------
 // Class methods
 + (NSString *)databaseVersionToString:(PWSfile::VERSION)version {
     return [iPWSDatabaseModelVersionMap objectForKey:[NSNumber numberWithInt:version]];
-}
-
-+ (BOOL)isPasswordSafeFile:(NSString *)filePath {
-    return (PWSfile::UNKNOWN_VERSION != PWSfile::ReadVersion([filePath UTF8String])); 
 }
 
 + (id)databaseModelNamed:(NSString *)theFriendlyName 
@@ -124,19 +119,19 @@ static BOOL sessionKeyInitialized = NO;
                         passphrase:thePassphrase
                            errorMsg:errorMsg] autorelease];
 }
-   
+
 //------------------------------------------------------------------------------------
 // Instance methods
 
 //------------------------------------------------------------------------------------
 // Accessors
-// Read the version of the model from the file (no passphrase required)
+// Read the version of the model from the file (passphrase may be required)
 - (PWSfile::VERSION) version {
-    return PWSfile::ReadVersion([self.fileName UTF8String]);
+    return PWSfile::ReadVersion([self.fileName getStringX], [self.passphrase getStringX]);
 }
 
 // Read the header from the model's file (passphrase required)
-- (const PWSfile::HeaderRecord *)headerRecord {
+- (const PWSfileHeader *)headerRecord {
     return &headerRecord;
 }
 
@@ -197,12 +192,6 @@ static BOOL sessionKeyInitialized = NO;
       fileNamed:(NSString *)theFileName 
      passphrase:(NSString *)thePassphrase
        errorMsg:(NSError **)errorMsg {
-    
-    // Ensure the password safe library is initialized
-    if (!sessionKeyInitialized) {
-        CItemData::SetSessionKey();
-        sessionKeyInitialized = YES;
-    }
     
     // Sanity checks on the name, file name, and passphrase
     if (!theFriendlyName || ![theFriendlyName length] || !theFileName || ![theFileName length]) {
@@ -336,14 +325,14 @@ last_error:
         v = PWSfile::VCURRENT;
     }
     
-    self.pwsFileHandle = PWSfile::MakePWSfile([self.fileName UTF8String], v, mode, status, NULL, NULL);
+    self.pwsFileHandle = PWSfile::MakePWSfile([self.fileName getStringX], [self.passphrase getStringX], v, mode, status, NULL, NULL);
     if ((NULL == self.pwsFileHandle) || (PWSfile::SUCCESS != status)) {
         self.lastError = [self errorForStatus:status];
         return NO;
     }
     
     // Open the file
-    if (PWSfile::SUCCESS != self.pwsFileHandle->Open([self.passphrase UTF8String])) {
+    if (PWSfile::SUCCESS != self.pwsFileHandle->Open([self.passphrase getStringX])) {
         self.lastError = [self errorForStatus:PWSfile::WRONG_PASSWORD];
         return NO;
     }

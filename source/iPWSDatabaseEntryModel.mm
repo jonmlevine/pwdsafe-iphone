@@ -27,6 +27,8 @@
 
 
 #import "iPWSDatabaseEntryModel.h"
+#import "NSString+CppStringAdditions.h"
+
 
 NSString *iPWSDatabaseEntryModelChangedNotification = @"iPWSDatabaseEntryModelChangedNotification";
 
@@ -38,7 +40,7 @@ NSString *iPWSDatabaseEntryModelChangedNotification = @"iPWSDatabaseEntryModelCh
  
 #define SET_FIELD(f, m)                   \
   if ((f == nil) || [f isEqualToString:self.f]) return; \
-  data.m ([(f) UTF8String]);              \
+  data.m ([(f) getStringX]);              \
   [self changed];
 
 //------------------------------------------------------------------------------------
@@ -105,7 +107,11 @@ NSString *iPWSDatabaseEntryModelChangedNotification = @"iPWSDatabaseEntryModelCh
 }
 
 - (NSString *)stringForStringX:(const StringX&)stringX {
-    return [NSString stringWithUTF8String:stringX.c_str()];
+    char* d = (char*)stringX.data();
+    unsigned long s = stringX.size() * sizeof(wchar_t);
+    
+    NSString* result = [[NSString alloc] initWithBytes:d length:s encoding:kEncoding_wchar_t];
+    return result;
 }
 
 @end

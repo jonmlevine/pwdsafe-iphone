@@ -31,6 +31,8 @@
 #import "corelib/PWPolicy.h"
 #import "corelib/PWSprefs.h"
 #import "DismissAlertView.h"
+#import "NSString+CppStringAdditions.h"
+
 
 //------------------------------------------------------------------------------------
 // Private implementation
@@ -362,8 +364,8 @@ NSString* iPWSDatabaseEntryViewControllerEntryUserInfoKey =
 
 - (UIBarButtonItem *)copyButton {
     if (!copyButton) {
-        copyButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCompose
-                                                                   target:self 
+       copyButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCompose
+                                                                   target:self
                                                                    action:@selector(copyButtonPressed)];
     }
     return copyButton;
@@ -421,10 +423,10 @@ NSString* iPWSDatabaseEntryViewControllerEntryUserInfoKey =
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     policy.length = [[defaults stringForKey:@"password_generator_length"] intValue];
 	if (!policy.length) policy.length = 8;
-    if ([defaults boolForKey:@"password_generator_use_lowercase"]) policy.flags |= PWSprefs::PWPolicyUseLowercase;
-    if ([defaults boolForKey:@"password_generator_use_uppercase"]) policy.flags |= PWSprefs::PWPolicyUseUppercase;
-    if ([defaults boolForKey:@"password_generator_use_digits"])    policy.flags |= PWSprefs::PWPolicyUseDigits;
-    if ([defaults boolForKey:@"password_generator_use_symbols"])   policy.flags |= PWSprefs::PWPolicyUseSymbols;
+    if ([defaults boolForKey:@"password_generator_use_lowercase"]) policy.flags |= PWPolicy::UseLowercase;
+    if ([defaults boolForKey:@"password_generator_use_uppercase"]) policy.flags |= PWPolicy::UseUppercase;
+    if ([defaults boolForKey:@"password_generator_use_digits"])    policy.flags |= PWPolicy::UseDigits;
+    if ([defaults boolForKey:@"password_generator_use_symbols"])   policy.flags |= PWPolicy::UseSymbols;
     
     if (0 == policy.flags) {
         UIAlertView *v = [[UIAlertView alloc] initWithTitle:@"Cannot generate password"
@@ -435,7 +437,10 @@ NSString* iPWSDatabaseEntryViewControllerEntryUserInfoKey =
         [v show];
         [v release];
     } else {
-        passphraseTextField.text = [NSString stringWithFormat:@"%s", policy.MakeRandomPassword().c_str()];
+        StringX retval = policy.MakeRandomPassword();
+        passphraseTextField.text = [[[NSString alloc] initWithBytes: retval.c_str()
+                                                             length: retval.length()*sizeof(wchar_t)
+                                                           encoding: kEncoding_wchar_t] autorelease];
     }
 }
 
