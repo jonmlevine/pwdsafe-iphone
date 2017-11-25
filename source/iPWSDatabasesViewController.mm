@@ -35,6 +35,10 @@
 #import "PasswordAlertView.h"
 #import "DismissAlertView.h"
 
+#define HEX_SERVICE @"iPasswordSafe"
+#define HEX_SERVICE_MSG @"Authenticate to unlock the key"
+
+
 //------------------------------------------------------------------------------------
 // Private interface declaration
 @interface iPWSDatabasesViewController ()
@@ -213,13 +217,55 @@ enum {
 // When a database is selected, prompt for the passphrase and then navigate to the model
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     NSString *friendlyName   = [self friendlyNameAtIndex:indexPath.row];
-    iPWSDatabaseModel *model = [self modelForFriendlyName:friendlyName];
+    iPWSDatabaseModel *model;
+    
+    model = [self modelForFriendlyName:friendlyName];
     if (model) {
         [self showDatabaseModel:model];
     } else {
-        [self promptForPassphraseForName:friendlyName
-                                     tag:PASSPHRASE_PROMPT_OPEN_DATABASE_TAG];
-    }    
+        /* Lets try to get our secret from the keychain.
+         * User will be asked for Touch ID or device passcode if Touch ID not available
+         * You could use LocalAuthentication's canEvaluatePolicy method to determine if this is a touch ID device first.
+         */
+        NSDictionary *query = @{
+                                (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                (__bridge id)kSecAttrService: [HEX_SERVICE
+                                                               stringByAppendingString:friendlyName],
+                                (__bridge id)kSecReturnData: @YES,
+                                (__bridge id)kSecUseOperationPrompt: HEX_SERVICE_MSG
+                                };
+        
+        dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            CFTypeRef dataTypeRef = NULL;
+            
+            OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)(query), &dataTypeRef);
+            if (status == errSecSuccess)
+            {
+                NSData *resultData = ( __bridge_transfer NSData *)dataTypeRef;
+                
+                NSString * result = [[NSString alloc]
+                                     initWithData:resultData
+                                     encoding:NSUTF8StringEncoding];
+                
+                NSError *errorMsg;
+                model = [self.databaseFactory openDatabaseModelNamed:friendlyName
+                                                          passphrase:result
+                                                            errorMsg:&errorMsg];
+                if (model) {
+                    [self showDatabaseModel:model];
+                }
+            }
+            else
+            {
+                //Normally would do better error handling
+                NSLog(@"Something went wrong");
+            }
+        });
+        if (!model) {
+            [self promptForPassphraseForName:friendlyName
+                                         tag:PASSPHRASE_PROMPT_OPEN_DATABASE_TAG];
+        }
+    }
     
 }
 
@@ -321,7 +367,43 @@ enum {
         return;
     }
     
-    // Do any final special processing   
+    SecAccessControlRef sacRef;
+    CFErrorRef *err = nil;
+    
+    
+    //Gets our Security Access Control ref for user presence policy (requires user AuthN)
+    sacRef = SecAccessControlCreateWithFlags(kCFAllocatorDefault,
+                                             kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+                                             kSecAccessControlUserPresence,
+                                             err);
+    
+    NSDictionary *attributes = @{
+                                 //Sec class, in this case just a password
+                                 (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                 //Our service UUID/Name
+                                 (__bridge id)kSecAttrService: [HEX_SERVICE
+                                                                stringByAppendingString:friendlyName],
+                                 //The data to insert
+                                 (__bridge id)kSecValueData: [alertView.passwordTextField.text
+                                                              dataUsingEncoding:NSUTF8StringEncoding],
+                                 //Whether or not we want to prompt on insert
+                                 (__bridge id)kSecUseNoAuthenticationUI: @YES,
+                                 //Our security access control reference
+                                 (__bridge id)kSecAttrAccessControl: (__bridge_transfer id)sacRef
+                                 };
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        //Insert the data to the keychain, using our attributes dictionary
+        OSStatus status = SecItemAdd((__bridge CFDictionaryRef)attributes, nil);
+        if (status)
+        {
+            status = status;
+        }
+    });
+    
+
+    
+    // Do any final special processing
     if (PASSPHRASE_PROMPT_OPEN_DATABASE_TAG == theAlertView.tag) {
         [self showDatabaseModel:model];
     }    
